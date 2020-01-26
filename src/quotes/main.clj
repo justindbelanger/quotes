@@ -2,7 +2,8 @@
   (:require [aleph.http]
             [hiccup.core]
             [hiccup.page]
-            [reitit.ring]))
+            [reitit.ring]
+            [riemann.client]))
 
 (defn index-page-handler
   [get-quote _request]
@@ -26,11 +27,24 @@
    {:text   "I’m never going back to a non-LISP. Life is too short to learn fussy language grammars with tons of special cases."
     :person "Gene Kim"}])
 
+(def riemann-client (riemann.client/tcp-client {:host "0.0.0.0"
+                                                :port 5555}))
+
 (def app
   (reitit.ring/ring-handler
    (reitit.ring/router
-    ["/" {:get (partial index-page-handler (fn []
-                                             (rand-nth quotes)))}])
+    ["/" {:get (fn [request]
+                 (let [start    (System/nanoTime)
+                       response (index-page-handler (fn [] (rand-nth quotes))
+                                                    request)
+                       end      (System/nanoTime)
+                       duration (- end start)]
+                   (-> riemann-client
+                       (riemann.client/send-event {:service "quotes.http.index.service-time"
+                                                   :metric  duration
+                                                   :state   "ok"})
+                       (deref 5000 ::timeout))
+                   response))}])
    (reitit.ring/create-default-handler)))
 
 (defonce *server (atom nil))
@@ -38,7 +52,6 @@
 (defn start-server!
   [port]
   (reset! *server (aleph.http/start-server app {:port port})))
-
 
 (defn stop-server!
   []
