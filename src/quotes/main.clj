@@ -2,6 +2,7 @@
   (:require [aleph.http]
             [hiccup.core]
             [hiccup.page]
+            [juxt.clip.core :as clip]
             [reitit.ring]
             [riemann.client]))
 
@@ -23,12 +24,17 @@
 
 ;; * Sending events to Riemann
 
-(def riemann-client (riemann.client/tcp-client {:host "0.0.0.0"
-                                                :port 5555}))
+(defn make-riemann-client
+  "Connects to a running Riemann instance via TCP.
+  Uses the default host and port.
+  Returns the Riemann client instance."
+  []
+  (riemann.client/tcp-client {:host "0.0.0.0"
+                              :port 5555}))
 
 (defn wrap-riemann-service-time
   "Sends time to service each request to Riemann."
-  [handler]
+  [handler riemann-client]
   (fn [request]
     (let [start    (System/nanoTime)
           response (handler request)
@@ -44,6 +50,8 @@
 ;; * HTTP handlers
 
 (defn index-page-handler
+  "Serves an HTML page containing the inspirational `:quote`
+  provided in the `request` map."
   [request]
   (let [{:keys [text person]} (:quote request)]
     {:status 200
@@ -57,31 +65,46 @@
                 [:p [:span "\""] [:strong text] [:span "\""]]
                 [:p [:span " - "] person]]))}))
 
-(def app
+(defn make-app
+  "Provides a Ring-compatible handler to serve the Quotes app.
+  Sends metrics using the given `riemann-client`."
+  [riemann-client]
   (reitit.ring/ring-handler
    (reitit.ring/router
     ["/" {:get        index-page-handler
-          :middleware [[wrap-riemann-service-time]
+          :middleware [[wrap-riemann-service-time riemann-client]
                        [wrap-random-quote]]}])
    (reitit.ring/create-default-handler)))
 
-;; * HTTP server
+;; * Clip config
 
-(defonce *server (atom nil))
-
-(defn start-server!
+(defn make-system-config
+  "Provides a Clip system config using the given HTTP `port`."
   [port]
-  (reset! *server (aleph.http/start-server app {:port port})))
-
-(defn stop-server!
-  []
-  (.close @*server)
-  (reset! *server nil))
+  {:components
+   {:riemann-client {:start `make-riemann-client}
+    :app            {:start `(make-app (clip/ref :riemann-client))}
+    :server         {:start `(aleph.http/start-server (clip/ref :app)
+                                                      {:port ~port})}}})
 
 ;; * App entry point
+
+(def *system-config (atom nil))
+(def *system (atom nil))
+
+(defn start-all! [port]
+  (let [system-config (make-system-config port)
+        system        (clip/start system-config)]
+    (reset! *system system)
+    (reset! *system-config system-config)))
+
+(defn stop-all! []
+  (clip/stop @*system-config @*system)
+  (reset! *system nil)
+  (reset! *system-config nil))
 
 (defn -main [& {:keys [port]
                 :or   {port 8080}}]
   (println (str "Starting HTTP server on " port))
-  (start-server! port)
+  (start-all! port)
   (println (str "Started HTTP server")))
