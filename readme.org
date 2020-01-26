@@ -1,0 +1,13 @@
+* quotes
+
+* What's this?
+It's a simple, demo Clojure Web app
+that displays a random quote on an HTML page.
+It also sends user metrics to a configured Riemann instance.
+
+* Why?
+This is mostly just a demo of what you can do with Riemann.
+
+It's also (a bit of) a way for me to practice starting
+this kind of project from scratch. Sometimes I forget
+just what exactly is needed to get a Web app off the ground.
