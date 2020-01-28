@@ -3,7 +3,8 @@
 * What's this?
 It's a simple, demo Clojure Web app
 that displays a random quote on an HTML page.
-It also sends user metrics to a configured Riemann instance.
+It also sends user metrics to a configured [[https://riemann.io/][Riemann]] instance.
+See the [[https://github.com/justindbelanger/quotes_monitoring][Quotes monitoring repo]] for more info about that.
 
 * Why?
 This is mostly just a demo of what you can do with Riemann.
